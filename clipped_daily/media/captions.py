@@ -10,26 +10,62 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 
-def register_cuda_dlls() -> list[str]:
-    """On Windows, make the cuBLAS/cuDNN DLLs from the pip packages
-    (nvidia-cublas-cu12, nvidia-cudnn-cu12) visible to faster-whisper."""
-    if os.name != "nt":
-        return []
-    added = []
-    for base in map(Path, sys.path):
-        nv = base / "nvidia"
+_DLL_HANDLES: list = []     # keep references so Windows never unloads them
+CUDA_DLLS: list[str] = []   # what got loaded, for `doctor`
+
+
+def _nvidia_dirs() -> list[Path]:
+    import site
+
+    bases = list(sys.path)
+    try:
+        bases += site.getsitepackages() + [site.getusersitepackages()]
+    except Exception:
+        pass
+    bases.append(str(Path(sys.prefix) / "Lib" / "site-packages"))
+    out: list[Path] = []
+    for base in dict.fromkeys(bases):
+        nv = Path(base) / "nvidia"
         if not nv.is_dir():
             continue
-        for sub in ("cublas", "cudnn", "cuda_runtime", "cuda_nvrtc"):
+        for sub in ("cuda_runtime", "cuda_nvrtc", "cublas", "cudnn"):
             d = nv / sub / "bin"
-            if d.is_dir() and str(d) not in added:
+            if d.is_dir() and d not in out:
+                out.append(d)
+    return out
+
+
+def register_cuda_dlls() -> list[str]:
+    """On Windows, load cuBLAS/cuDNN from the pip packages (nvidia-cublas-cu12,
+    nvidia-cudnn-cu12) by FULL PATH so faster-whisper always finds them.
+
+    Adding folders to PATH alone isn't reliable on Windows; a DLL that is already
+    loaded in the process is always found by name.
+    """
+    if os.name != "nt":
+        return []
+    import ctypes
+
+    dirs = _nvidia_dirs()
+    for d in dirs:
+        try:
+            _DLL_HANDLES.append(os.add_dll_directory(str(d)))
+        except OSError:
+            pass
+        os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
+    wanted = ("cudart64", "nvrtc64", "cublasLt64", "cublas64", "cudnn64", "cudnn_")
+    for d in dirs:
+        # cublasLt before cublas, cudnn64 before its sub-libraries
+        for dll in sorted(d.glob("*.dll"), key=lambda f: (not f.name.startswith(("cublasLt", "cudnn64")), f.name)):
+            if dll.name.startswith(wanted) and dll.name not in CUDA_DLLS:
                 try:
-                    os.add_dll_directory(str(d))
-                except OSError:
-                    pass
-                os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
-                added.append(str(d))
-    return added
+                    _DLL_HANDLES.append(ctypes.WinDLL(str(dll)))
+                    CUDA_DLLS.append(dll.name)
+                except OSError as e:
+                    log.debug("Could not preload %s: %s", dll, e)
+    if dirs and "cublas64_12.dll" not in CUDA_DLLS:
+        log.warning("CUDA folders found but cublas64_12.dll didn't load: %s", ", ".join(map(str, dirs)))
+    return CUDA_DLLS
 
 
 register_cuda_dlls()

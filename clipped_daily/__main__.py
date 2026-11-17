@@ -63,6 +63,11 @@ def cmd_doctor(s, db) -> int:
         import ctranslate2
         n = ctranslate2.get_cuda_device_count()
         line(n > 0, f"CUDA GPU visible to Whisper ({n})", "Update NVIDIA drivers. Captions will run on CPU (slower).")
+        if os.name == "nt":
+            have = captions.CUDA_DLLS
+            line("cublas64_12.dll" in have and any(x.startswith("cudnn") for x in have),
+                 f"CUDA libraries loaded ({len(have)} DLLs: {', '.join(have[:4])}{'…' if len(have) > 4 else ''})",
+                 'pip install --force-reinstall nvidia-cublas-cu12 "nvidia-cudnn-cu12>=9,<10"')
         if n > 0:
             try:
                 line(True, captions.gpu_selftest())
