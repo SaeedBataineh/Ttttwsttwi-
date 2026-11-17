@@ -69,7 +69,36 @@ class ClippedBot(discord.Client):
 
     async def on_ready(self):
         log.info("Logged in as %s", self.user)
+        await self.sync_deleted_reviews()
         await self.post_reviews()
+
+    async def sync_deleted_reviews(self) -> None:
+        """Clips whose review card was deleted while the bot was off count as rejected."""
+        rows = self.db.query("SELECT id, review_message_id FROM clips WHERE status='review' "
+                             "AND review_message_id IS NOT NULL")
+        if not rows:
+            return
+        ch = await self.channel(self.review_id)
+        gone = 0
+        for r in rows:
+            try:
+                await ch.fetch_message(int(r["review_message_id"]))
+            except discord.NotFound:
+                self.db.update_clip(r["id"], status="rejected", error="review card deleted")
+                gone += 1
+            except discord.HTTPException:
+                pass
+        if gone:
+            log.info("%d review card(s) were deleted in Discord - treated as rejected", gone)
+
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
+        """Deleting a review card in Discord = reject that clip."""
+        if payload.channel_id != self.review_id:
+            return
+        row = self.db.one("SELECT id, status FROM clips WHERE review_message_id=?", (str(payload.message_id),))
+        if row and row["status"] == "review":
+            self.db.update_clip(row["id"], status="rejected", error="review card deleted")
+            log.info("Review card for %s deleted - marked as rejected", row["id"])
 
     @tasks.loop(minutes=45)
     async def fetch_loop(self):
