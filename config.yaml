@@ -52,7 +52,7 @@ render:
 # laughing) plus the build-up before it, cut at pauses in speech.
 trim:
   enabled: true
-  max_length: 35             # seconds; Shorts do best around 15-35s
+  max_length: 30             # hard cap in seconds - nothing posts longer than this
   seconds_after_peak: 4      # keep this much after the climax for the reaction
 
 # --- Gaming mode ------------------------------------------------------------

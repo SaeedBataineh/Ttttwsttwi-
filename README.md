@@ -100,9 +100,9 @@ python -m clipped_daily run                     # start the bot
 
 ## Long clips and bad titles
 
-- **Trimming:** clips longer than `trim.max_length` (35s) are cut to the best part: the
+- **Trimming:** clips longer than `trim.max_length` (30s, a hard cap) are cut to the best part: the
   loudest moment (yelling/laughing), the build-up before it and a few seconds after,
-  cut at pauses in speech. The review card shows `✂️ Trimmed 50s → 36s`.
+  cut at pauses in speech. The review card shows `✂️ Trimmed 50s → 30s`.
 - **Titles:** junk Twitch titles ("A", "2", "lol", or the stream's own title like
   "!merch | 24/7 LIVE") are replaced with a quote from what the streamer says. You can
   always change it with ✏️ Edit title.

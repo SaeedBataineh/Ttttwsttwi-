@@ -262,7 +262,7 @@ def render_files(s: Settings, src: Path, d: Path, facecam: dict | None, twitch_t
     tcfg = s.get("trim", {}) or {}
     start, end = 0.0, duration
     if tcfg.get("enabled", True) and audio is not None:
-        start, end = highlight.find_window(audio, duration, words, float(tcfg.get("max_length", 35)),
+        start, end = highlight.find_window(audio, duration, words, float(tcfg.get("max_length", 30)),
                                            float(tcfg.get("seconds_after_peak", 4)))
     timings["trim"] = (start, end, duration)
     words = highlight.shift_words(words, start, end) if (start, end) != (0.0, duration) else words

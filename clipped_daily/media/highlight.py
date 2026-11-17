@@ -55,7 +55,7 @@ def _snap(t: float, words: list[tuple[float, float, str]], direction: str, reach
 def find_window(audio: np.ndarray, duration: float, words: list[tuple[float, float, str]],
                 max_len: float = 35.0, after: float = 4.0) -> tuple[float, float]:
     """Return (start, end) seconds of the best part. Whole clip if it's already short."""
-    if duration <= max_len + 2:
+    if duration <= max_len:
         return 0.0, duration
     hop = 0.25
     loud = loudness(audio, hop)
@@ -74,10 +74,11 @@ def find_window(audio: np.ndarray, duration: float, words: list[tuple[float, flo
         end = min(duration, max_len)
     start = _snap(start, words, "start")
     end = min(duration, _snap(end, words, "end"))
-    if end - start > max_len + 3:          # snapping overshot; fall back to the raw window
-        start = max(0.0, end - max_len)
     if end - start < 8:
-        return max(0.0, duration - max_len), duration
+        start, end = max(0.0, duration - max_len), duration
+    # Hard cap: never longer than max_len. Keep the end (the climax/reaction), drop extra build-up.
+    if end - start > max_len:
+        start = end - max_len
     return round(start, 2), round(end, 2)
 
 
