@@ -187,6 +187,13 @@ class Pipeline:
             captions.unload()
         return ready
 
+    def retry_failed(self) -> int:
+        """Give failed clips another chance (called when the bot starts)."""
+        rows = self.db.by_status("failed")
+        for r in rows:
+            self.db.update_clip(r["id"], status="seen", error=None)
+        return len(rows)
+
     def cleanup(self) -> None:
         days = self.s.get("cleanup_days", 3)
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -206,8 +213,11 @@ def render_files(s: Settings, src: Path, d: Path, facecam: dict | None, twitch_t
     pos = render.layout_positions(layout, fh)
     chunks = []
     if rcfg.get("captions", True):
-        words = captions.transcribe(src, rcfg.get("whisper_model", "small"), rcfg.get("whisper_device", "auto"))
-        chunks = captions.chunk_words(words)
+        try:
+            words = captions.transcribe(src, rcfg.get("whisper_model", "small"), rcfg.get("whisper_device", "auto"))
+            chunks = captions.chunk_words(words)
+        except Exception:
+            log.exception("Captions failed - rendering without them")
     hook = twitch_title if (rcfg.get("hook_title", True) and pos["hook_y"] and twitch_title) else None
     ass = captions.build_ass(d / "subs.ass", chunks, caption_y=pos["caption_y"], duration=duration,
                              hook=hook, hook_y=pos["hook_y"] or 0, watermark=rcfg.get("watermark"))

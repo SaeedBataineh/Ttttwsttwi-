@@ -78,20 +78,42 @@ def unload() -> None:
     gc.collect()
 
 
+def load_audio(path: Path, sr: int = 16000):
+    """Decode audio to 16 kHz mono float32 with ffmpeg (avoids PyAV version breakage)."""
+    import subprocess
+
+    import numpy as np
+
+    from .render import ffmpeg_bin
+
+    proc = subprocess.run([ffmpeg_bin(), "-nostdin", "-hide_banner", "-loglevel", "error", "-i", str(path),
+                           "-vn", "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"],
+                          capture_output=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffmpeg audio decode failed: {proc.stderr.decode(errors='ignore')[-300:]}")
+    return np.frombuffer(proc.stdout, dtype=np.float32).copy()
+
+
+def _run(model, audio) -> list[tuple[float, float, str]]:
+    segments, _ = model.transcribe(audio, language="en", word_timestamps=True, vad_filter=True)
+    return [(w.start, w.end, w.word.strip()) for seg in segments for w in (seg.words or [])]
+
+
 def transcribe(path: Path, model_name: str = "small", device: str = "auto") -> list[tuple[float, float, str]]:
     """Return word-level timestamps [(start, end, word)]."""
+    audio = load_audio(path)
+    if audio.size == 0:
+        return []
     model, used = _load(model_name, device)
     try:
-        segments, _ = model.transcribe(str(path), language="en", word_timestamps=True, vad_filter=True)
-        words = [(w.start, w.end, w.word.strip()) for seg in segments for w in (seg.words or [])]
+        words = _run(model, audio)
     except Exception as e:
         if used != "cuda":
             raise
         # Usually missing cuBLAS/cuDNN DLLs on Windows. Fall back to CPU so the clip still renders.
         log.warning("GPU transcription failed (%s); retrying on CPU", e)
         model, _ = _load(model_name, "cpu")
-        segments, _ = model.transcribe(str(path), language="en", word_timestamps=True, vad_filter=True)
-        words = [(w.start, w.end, w.word.strip()) for seg in segments for w in (seg.words or [])]
+        words = _run(model, audio)
     return [w for w in words if w[2]]
 
 

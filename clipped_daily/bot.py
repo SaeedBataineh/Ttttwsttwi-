@@ -51,6 +51,9 @@ class ClippedBot(discord.Client):
 
     # ================================================================ lifecycle
     async def setup_hook(self):
+        n = self.pipe.retry_failed()
+        if n:
+            log.info("Retrying %d previously failed clip(s)", n)
         self._register_commands()
         await self.tree.sync(guild=self.guild_obj)
         self.fetch_loop.change_interval(minutes=float(self.s.get("fetch_interval_minutes", 45)))

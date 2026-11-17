@@ -18,6 +18,7 @@ import os
 import warnings
 
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+os.environ.setdefault("HF_HUB_VERBOSITY", "error")
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 warnings.filterwarnings("ignore", module="huggingface_hub")
 
@@ -29,8 +30,8 @@ def _setup_logging(verbose: bool) -> None:
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO,
                         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s", datefmt="%H:%M:%S")
     for noisy in ("discord.gateway", "discord.http", "googleapiclient", "faster_whisper", "urllib3",
-                  "httpx", "httpx2", "httpcore", "huggingface_hub", "filelock"):
-        logging.getLogger(noisy).setLevel(logging.ERROR if noisy.startswith("hugging") else logging.WARNING)
+                  "httpx", "httpx2", "httpcore", "huggingface_hub", "filelock", "discord.client"):
+        logging.getLogger(noisy).setLevel(logging.ERROR if noisy.startswith(("hugging", "discord.client")) else logging.WARNING)
 
 
 def cmd_doctor(s, db) -> int:
