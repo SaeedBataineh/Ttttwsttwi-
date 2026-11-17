@@ -1,0 +1,48 @@
+# Streamers to clip. Edit by hand or with /streamers in Discord.
+#
+# login:   Twitch username (from twitch.tv/<login>)
+# name:    how the name appears in titles
+# group:   streamers who often stream together; clips from the same group made
+#          within 2 minutes of each other are treated as duplicates
+# facecam: where the webcam sits, as fractions of the frame (0-1).
+#          Leave null for the blurred-background layout.
+#          Find it with:  python -m clipped_daily snapshot <login>
+#          Example:       facecam: {x: 0.0, y: 0.0, w: 0.25, h: 0.3}
+# allowed: set to false to pause a streamer without deleting them
+streamers:
+  - login: kaicenat
+    name: Kai Cenat
+    group: amp
+    facecam: null
+  - login: xqc
+    name: xQc
+    group: null
+    facecam: null
+  - login: jynxzi
+    name: Jynxzi
+    group: null
+    facecam: null
+  - login: plaqueboymax
+    name: Plaqueboymax
+    group: null
+    facecam: null
+  - login: agent00
+    name: Agent00
+    group: amp
+    facecam: null
+  - login: fanum
+    name: Fanum
+    group: amp
+    facecam: null
+  - login: lacy
+    name: Lacy
+    group: lacy_crew
+    facecam: null
+  - login: stableronaldo
+    name: StableRonaldo
+    group: lacy_crew
+    facecam: null
+  - login: adapt
+    name: Adapt
+    group: lacy_crew
+    facecam: null

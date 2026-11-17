@@ -1,0 +1,65 @@
+channel_name: Clipped Daily
+
+# "local" uses your PC's timezone, or set one like "America/New_York".
+timezone: local
+
+# --- Fetching ---------------------------------------------------------------
+fetch_interval_minutes: 45
+lookback_hours: 24          # only clips created in the last N hours
+clips_per_streamer: 20      # top N clips (by views) pulled per streamer per check
+min_views: 300
+min_duration: 8             # seconds
+max_duration: 60
+
+# --- Review -----------------------------------------------------------------
+max_pending_review: 15              # stop rendering new candidates when this many await review
+max_review_per_streamer_per_day: 4  # how many candidates per streamer you get to look at daily
+renders_per_cycle: 5                # max clips rendered per check
+
+# --- Posting ----------------------------------------------------------------
+post_times: ["12:00", "16:00", "20:00"]   # in the timezone above
+max_posts_per_streamer_per_day: 2
+title_template: "{streamer}: {title}"     # placeholders: {streamer} {title} {game}
+
+platforms:
+  youtube:
+    enabled: true
+    privacy: public          # public | unlisted | private
+    category_id: "20"        # 20 = Gaming, 24 = Entertainment
+  tiktok:
+    enabled: false           # not implemented yet
+    # TikTok is blocked in some countries (e.g. Jordan). Route ONLY TikTok uploads
+    # through a proxy; everything else stays on your normal connection.
+    # Free option: Cloudflare WARP in proxy mode -> "socks5h://127.0.0.1:40000"
+    # Leave empty when running on a VPS where TikTok isn't blocked.
+    proxy: ""
+  instagram:
+    enabled: false           # not implemented yet
+
+# --- Rendering --------------------------------------------------------------
+render:
+  encoder: auto              # auto (NVENC if available) | nvenc | cpu
+  captions: true
+  whisper_model: small       # tiny | base | small | medium
+  whisper_device: auto       # auto (GPU if available) | cuda | cpu
+  hook_title: true           # show the title on top of blur-layout videos
+  watermark: "Clipped Daily"
+  facecam_height: 640        # px of the 1920 tall video used for the facecam
+
+# --- Gaming mode ------------------------------------------------------------
+# When on, rendering pauses (fetching still runs). Toggle with /gaming in Discord.
+gaming_mode:
+  auto_detect: true
+  processes:                 # process names that mean "I'm gaming"
+    - FortniteClient-Win64-Shipping.exe
+    - VALORANT-Win64-Shipping.exe
+    - cs2.exe
+    - r5apex.exe
+    - RainbowSix.exe
+    - RainbowSix_BE.exe
+    - FiveM.exe
+    - GTA5.exe
+    - Minecraft.Windows.exe
+    - javaw.exe
+
+cleanup_days: 3   # delete rendered files this many days after posting/rejecting
