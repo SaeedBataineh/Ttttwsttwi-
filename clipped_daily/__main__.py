@@ -35,9 +35,11 @@ def cmd_doctor(s, db) -> int:
 
     print("Clipped Daily setup check\n")
     from .media import render
-    import shutil
-    line(bool(shutil.which("ffmpeg")), "ffmpeg installed", "Install ffmpeg: winget install Gyan.FFmpeg  (then reopen the terminal)")
-    if shutil.which("ffmpeg"):
+    ff = render.find_tool("ffmpeg")
+    line(bool(ff), f"ffmpeg found ({ff})" if ff else "ffmpeg found",
+         "Install ffmpeg: winget install Gyan.FFmpeg (then reopen the terminal), or unzip it into this folder")
+    line(bool(render.find_tool("ffprobe")), "ffprobe found", "ffprobe.exe comes in the same ffmpeg zip - keep it next to ffmpeg.exe")
+    if ff:
         line(render.has_nvenc(), "NVENC GPU encoding available", "Update NVIDIA drivers. Rendering will still work on CPU.")
     try:
         import ctranslate2

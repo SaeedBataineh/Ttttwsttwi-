@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 from functools import lru_cache
@@ -19,10 +20,37 @@ FG_H = 608                     # height of the 16:9 video in the blur layout
 DISCORD_LIMIT_BYTES = 9_500_000
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SKIP_DIRS = {".venv", "venv", "work", "data", ".git", "__pycache__"}
+
+
+@lru_cache(maxsize=4)
+def find_tool(name: str) -> str | None:
+    """Find ffmpeg/ffprobe on PATH, or anywhere inside the project folder
+    (e.g. an unzipped ffmpeg-...-full_build/bin/ffmpeg.exe)."""
+    path = shutil.which(name)
+    if path:
+        return path
+    exe = name + ".exe" if os.name == "nt" else name
+    stack = [PROJECT_ROOT]
+    while stack:
+        d = stack.pop()
+        try:
+            entries = list(d.iterdir())
+        except OSError:
+            continue
+        for e in entries:
+            if e.is_file() and e.name.lower() == exe.lower():
+                return str(e)
+            if e.is_dir() and e.name not in SKIP_DIRS and len(e.relative_to(PROJECT_ROOT).parts) < 4:
+                stack.append(e)
+    return None
+
+
 def ffmpeg_bin() -> str:
-    path = shutil.which("ffmpeg")
+    path = find_tool("ffmpeg")
     if not path:
-        raise RuntimeError("ffmpeg not found on PATH. Install it (see README) and restart the terminal.")
+        raise RuntimeError("ffmpeg not found. Install it (winget install Gyan.FFmpeg) or unzip it into the project folder.")
     return path
 
 
@@ -50,7 +78,7 @@ def has_nvenc() -> bool:
 
 
 def probe_duration(path: Path) -> float:
-    ffprobe = shutil.which("ffprobe") or "ffprobe"
+    ffprobe = find_tool("ffprobe") or "ffprobe"
     out = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
                          capture_output=True, text=True)
     try:
