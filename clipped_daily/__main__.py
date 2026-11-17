@@ -190,6 +190,12 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     _setup_logging(args.verbose)
+    venv = Path(__file__).resolve().parent.parent / ".venv"
+    if venv.is_dir() and Path(sys.prefix).resolve() != venv.resolve():
+        print("\n  WARNING: you're not using the project's Python environment (.venv).\n"
+              "  GPU captions and some packages won't work. Run this first:\n"
+              "      .venv\\Scripts\\activate\n"
+              "  (your prompt should then start with (.venv))\n", file=sys.stderr)
     s = settings_mod.load()
     db = DB(s.db_path)
 
