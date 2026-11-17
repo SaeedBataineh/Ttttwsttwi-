@@ -6,7 +6,7 @@ timezone: local
 # --- Fetching ---------------------------------------------------------------
 fetch_interval_minutes: 45
 lookback_hours: 24          # only clips created in the last N hours
-clips_per_streamer: 20      # top N clips (by views) pulled per streamer per check
+clips_per_streamer: 100     # clips pulled per streamer per check (sorted by views)
 min_views: 300
 min_duration: 8             # seconds
 max_duration: 60

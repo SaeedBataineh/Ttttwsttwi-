@@ -46,11 +46,11 @@ class Pipeline:
         return cache
 
     def baseline(self, login: str, broadcaster_id: str, now: datetime) -> float:
-        key = f"baseline:{login}"
+        key = f"baseline2:{login}"
         cached = self.db.kv_get(key)
         if cached and now.timestamp() - cached["ts"] < BASELINE_TTL_H * 3600:
             return cached["value"]
-        week = self.twitch.clips(broadcaster_id, now - timedelta(days=7), now, first=100)
+        week = self.twitch.clips(broadcaster_id, now - timedelta(days=7), now, limit=300)
         value = scoring.baseline_views(week)
         self.db.kv_set(key, {"value": value, "ts": now.timestamp()})
         return value
@@ -75,7 +75,7 @@ class Pipeline:
                 continue
             try:
                 base = self.baseline(st.login, bid, now)
-                clips = self.twitch.clips(bid, since, now, first=self.s.get("clips_per_streamer", 20))
+                clips = self.twitch.clips(bid, since, now, limit=self.s.get("clips_per_streamer", 100))
             except Exception as e:
                 log.error("Fetching clips for %s failed: %s", st.login, e)
                 continue

@@ -9,9 +9,13 @@ from datetime import datetime
 from .twitch import parse_time
 
 
-def baseline_views(clips: list[dict]) -> float:
-    """A streamer's 'normal' clip views: median of their top clips over the past week."""
-    views = [c["view_count"] for c in clips if c.get("view_count") is not None]
+def baseline_views(clips: list[dict], top: int = 20) -> float:
+    """A streamer's 'normal good clip': median views of their top 20 clips this week.
+
+    Using only the top clips ignores the flood of tiny 5-view clips that every
+    big stream gets, which would otherwise make every clip look huge.
+    """
+    views = sorted((c["view_count"] for c in clips if c.get("view_count") is not None), reverse=True)[:top]
     return float(statistics.median(views)) if views else 0.0
 
 
@@ -58,12 +62,19 @@ GAMBLING_GAMES = {"slots & casino", "slots", "virtual casino", "poker"}
 MUSIC_WORDS = re.compile(r"\b(freestyle|song|beat|music|rap|singing|sings|cypher)\b", re.I)
 
 
+OFFENSIVE = re.compile(
+    r"(slur|n[\s-]?word|hard\s?r|racis|homophob|retard|f[\s-]?slur|nazi|sexual|nsfw|porn|nude|"
+    r"swat|doxx?|suicid|kill (him|her|myself|urself)|banned|ban(ned)? (on|from) twitch)", re.I)
+
+
 def flags_for(clip: dict) -> list[str]:
     flags = []
     game = (clip.get("game_name") or "").lower()
     title = clip.get("title") or ""
     if game in MUSIC_GAMES or MUSIC_WORDS.search(title):
         flags.append("🎵 Possible copyrighted music")
+    if OFFENSIVE.search(title):
+        flags.append("🚫 Title suggests slurs/offensive or ban-worthy content - likely to get the channel struck")
     if game in GAMBLING_GAMES:
         flags.append("🎰 Gambling content (often restricted)")
     return flags

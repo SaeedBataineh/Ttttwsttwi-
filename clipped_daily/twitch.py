@@ -62,15 +62,33 @@ class Twitch:
                 out[u["login"].lower()] = u
         return out
 
-    def clips(self, broadcaster_id: str, started_at: datetime, ended_at: datetime, first: int = 20) -> list[dict]:
-        """Clips in the window, sorted by view count (highest first)."""
-        data = self.get("clips", {
-            "broadcaster_id": broadcaster_id,
-            "started_at": rfc3339(started_at),
-            "ended_at": rfc3339(ended_at),
-            "first": min(first, 100),
-        })
-        return data.get("data", [])
+    def clips(self, broadcaster_id: str, started_at: datetime, ended_at: datetime, limit: int = 100) -> list[dict]:
+        """Clips in the window, highest views first.
+
+        Twitch doesn't reliably sort a date range across pages, so we page
+        through up to `limit` clips and sort them ourselves.
+        """
+        out: list[dict] = []
+        cursor = None
+        while len(out) < limit:
+            params = {
+                "broadcaster_id": broadcaster_id,
+                "started_at": rfc3339(started_at),
+                "ended_at": rfc3339(ended_at),
+                "first": 100,
+            }
+            if cursor:
+                params["after"] = cursor
+            data = self.get("clips", params)
+            page = data.get("data", [])
+            out.extend(page)
+            cursor = (data.get("pagination") or {}).get("cursor")
+            if not page or not cursor:
+                break
+        seen: set[str] = set()
+        uniq = [c for c in out if not (c["id"] in seen or seen.add(c["id"]))]
+        uniq.sort(key=lambda c: c.get("view_count", 0), reverse=True)
+        return uniq[:limit]
 
     def games(self, ids: list[str]) -> dict[str, str]:
         ids = [i for i in dict.fromkeys(ids) if i]
