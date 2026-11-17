@@ -93,6 +93,10 @@ python -m clipped_daily run                     # start the bot
 
 ## Tuning (`config.yaml`)
 
+Don't edit `config.yaml` directly: put your changes in `config.local.yaml` (copy
+`config.local.example.yaml`). It overrides `config.yaml` and `git pull` never touches it.
+
+
 - `post_times`, `max_posts_per_streamer_per_day`, `title_template`
 - `min_views`, `max_review_per_streamer_per_day`, `max_pending_review`
 - `render.whisper_model` (`small` is a good balance; `medium` = better accuracy, more VRAM)

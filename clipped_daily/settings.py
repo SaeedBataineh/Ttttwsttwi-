@@ -140,9 +140,20 @@ def load_env(root: Path = ROOT) -> int:
     return n
 
 
+def deep_merge(base: dict, override: dict) -> dict:
+    out = dict(base)
+    for k, v in (override or {}).items():
+        out[k] = deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
 def load(root: Path = ROOT) -> Settings:
     load_env(root)
-    config = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8")) or {}
+    config = yaml.safe_load(read_text_any(root / "config.yaml")) or {}
+    # Your own overrides live in config.local.yaml (git-ignored), so `git pull` never conflicts.
+    local = root / "config.local.yaml"
+    if local.exists():
+        config = deep_merge(config, yaml.safe_load(read_text_any(local)) or {})
     raw = yaml.safe_load((root / "streamers.yaml").read_text(encoding="utf-8")) or {}
     streamers = []
     for s in raw.get("streamers") or []:

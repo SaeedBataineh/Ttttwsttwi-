@@ -1,0 +1,13 @@
+# Copy this file to config.local.yaml and put YOUR changes here.
+# Anything here overrides config.yaml, and git never touches this file,
+# so `git pull` updates won't conflict with your settings.
+#
+# Only list what you want to change. Examples:
+
+min_views: 100
+
+# post_times: ["13:00", "18:00", "22:00"]
+# trim:
+#   max_length: 25
+# render:
+#   whisper_model: medium
