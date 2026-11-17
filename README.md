@@ -12,6 +12,12 @@ Twitch API -> score & pick -> download (yt-dlp) -> captions (Whisper, GPU)
 
 ## 1. Install (Windows)
 
+**Easiest:** in a normal PowerShell in this folder run `.\setup.ps1`. It installs
+everything below (Python packages, ffmpeg, GPU caption libraries), creates `.env`
+and runs the full check. Safe to rerun.
+
+Manual steps:
+
 1. **Python 3.11+** from python.org (tick "Add python.exe to PATH").
 2. **ffmpeg**: open PowerShell and run `winget install Gyan.FFmpeg`, then close and reopen PowerShell.
 3. **Up-to-date NVIDIA driver** (for NVENC encoding).

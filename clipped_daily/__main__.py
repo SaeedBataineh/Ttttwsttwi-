@@ -42,9 +42,16 @@ def cmd_doctor(s, db) -> int:
     if ff:
         line(render.has_nvenc(), "NVENC GPU encoding available", "Update NVIDIA drivers. Rendering will still work on CPU.")
     try:
+        from .media import captions
         import ctranslate2
         n = ctranslate2.get_cuda_device_count()
-        line(n > 0, f"CUDA for Whisper captions ({n} GPU)", "Captions will run on CPU (slower). See README 'GPU captions'.")
+        line(n > 0, f"CUDA GPU visible to Whisper ({n})", "Update NVIDIA drivers. Captions will run on CPU (slower).")
+        if n > 0:
+            try:
+                line(True, captions.gpu_selftest())
+            except Exception as e:
+                line(False, f"Whisper GPU test ({str(e)[:150]})",
+                     "pip install nvidia-cublas-cu12 \"nvidia-cudnn-cu12>=9,<10\"  (captions fall back to CPU meanwhile)")
     except Exception as e:
         line(False, f"faster-whisper import ({e})", "pip install -r requirements.txt")
 

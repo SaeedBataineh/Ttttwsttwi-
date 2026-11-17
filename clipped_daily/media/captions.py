@@ -3,9 +3,50 @@ from __future__ import annotations
 
 import gc
 import logging
+import os
+import sys
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+
+def register_cuda_dlls() -> list[str]:
+    """On Windows, make the cuBLAS/cuDNN DLLs from the pip packages
+    (nvidia-cublas-cu12, nvidia-cudnn-cu12) visible to faster-whisper."""
+    if os.name != "nt":
+        return []
+    added = []
+    for base in map(Path, sys.path):
+        nv = base / "nvidia"
+        if not nv.is_dir():
+            continue
+        for sub in ("cublas", "cudnn", "cuda_runtime", "cuda_nvrtc"):
+            d = nv / sub / "bin"
+            if d.is_dir() and str(d) not in added:
+                try:
+                    os.add_dll_directory(str(d))
+                except OSError:
+                    pass
+                os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
+                added.append(str(d))
+    return added
+
+
+register_cuda_dlls()
+
+
+def gpu_selftest(model_name: str = "tiny") -> str:
+    """Actually run Whisper on the GPU for a moment (this is when missing DLLs show up)."""
+    import numpy as np
+    from faster_whisper import WhisperModel
+
+    model = WhisperModel(model_name, device="cuda", compute_type="float16")
+    audio = (np.random.default_rng(0).standard_normal(16000 * 2) * 0.01).astype("float32")
+    segments, _ = model.transcribe(audio, language="en", vad_filter=False)
+    list(segments)
+    del model
+    gc.collect()
+    return "Whisper ran on the GPU"
 
 _model = None
 _model_key: tuple | None = None
