@@ -73,9 +73,9 @@ if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
     Ok "Created .env from .env.example"
 } else { Ok ".env exists" }
-$envText = Get-Content ".env" -Raw
+$envText = (Get-Content ".env" -Raw) + ""
 foreach ($k in "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "DISCORD_TOKEN", "DISCORD_GUILD_ID", "DISCORD_REVIEW_CHANNEL_ID") {
-    if ($envText -match "(?m)^$k=\s*\S+") { Ok "$k filled in" } else { Warn "$k is empty - open it with: notepad .env" }
+    if ($envText -match "(?m)^$k=[ \t]*[^\s#]") { Ok "$k filled in" } else { Warn "$k is empty - open it with: notepad .env" }
 }
 
 # ---------------------------------------------------------------- doctor
