@@ -9,7 +9,6 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import yaml
-from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -108,8 +107,41 @@ class Settings:
             self.streamers_path.write_text(header + body, encoding="utf-8")
 
 
+def read_text_any(path: Path) -> str:
+    """Read a text file saved by any Windows editor (UTF-8, UTF-8 with BOM, UTF-16)."""
+    raw = path.read_bytes()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16")
+    if raw.startswith(b"\xef\xbb\xbf"):
+        return raw[3:].decode("utf-8")
+    if len(raw) > 1 and raw[1:2] == b"\x00":          # UTF-16 LE without BOM
+        return raw.decode("utf-16-le")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("cp1252")
+
+
+def load_env(root: Path = ROOT) -> int:
+    """Load .env into the environment. Returns how many keys were set."""
+    path = root / ".env"
+    if not path.exists():
+        return 0
+    from io import StringIO
+    from dotenv import dotenv_values
+
+    values = dotenv_values(stream=StringIO(read_text_any(path)))
+    n = 0
+    for k, v in values.items():
+        k = k.strip().lstrip("\ufeff")
+        if k and v is not None and v.strip():
+            os.environ[k] = v.strip().strip('"').strip("'")
+            n += 1
+    return n
+
+
 def load(root: Path = ROOT) -> Settings:
-    load_dotenv(root / ".env")
+    load_env(root)
     config = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8")) or {}
     raw = yaml.safe_load((root / "streamers.yaml").read_text(encoding="utf-8")) or {}
     streamers = []

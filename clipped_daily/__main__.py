@@ -14,6 +14,13 @@ import logging
 import sys
 from pathlib import Path
 
+import os
+import warnings
+
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+warnings.filterwarnings("ignore", module="huggingface_hub")
+
 from . import settings as settings_mod
 from .db import DB
 
@@ -21,8 +28,9 @@ from .db import DB
 def _setup_logging(verbose: bool) -> None:
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO,
                         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s", datefmt="%H:%M:%S")
-    for noisy in ("discord.gateway", "discord.http", "googleapiclient", "faster_whisper", "urllib3"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+    for noisy in ("discord.gateway", "discord.http", "googleapiclient", "faster_whisper", "urllib3",
+                  "httpx", "httpx2", "httpcore", "huggingface_hub", "filelock"):
+        logging.getLogger(noisy).setLevel(logging.ERROR if noisy.startswith("hugging") else logging.WARNING)
 
 
 def cmd_doctor(s, db) -> int:
@@ -34,6 +42,14 @@ def cmd_doctor(s, db) -> int:
         print(f"  {'OK  ' if good else 'FAIL'} {msg}" + (f"\n       -> {fix}" if fix and not good else ""))
 
     print("Clipped Daily setup check\n")
+    env_path = s.root / ".env"
+    if not env_path.exists():
+        line(False, ".env file exists", "copy .env.example .env  then fill it in")
+    else:
+        n = settings_mod.load_env(s.root)
+        line(n > 0, f".env readable ({n} values loaded from {env_path})",
+             "The file looks empty to Python. Open it with notepad .env, check lines look like KEY=value, "
+             "then File > Save As > Encoding: UTF-8")
     from .media import render
     ff = render.find_tool("ffmpeg")
     line(bool(ff), f"ffmpeg found ({ff})" if ff else "ffmpeg found",
