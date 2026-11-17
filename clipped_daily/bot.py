@@ -32,7 +32,11 @@ class EditTitleModal(discord.ui.Modal, title="Edit post title"):
     async def on_submit(self, interaction: discord.Interaction):
         self.bot.db.update_clip(self.clip_id, post_title=str(self.new_title.value).strip())
         row = self.bot.db.clip(self.clip_id)
-        await interaction.response.edit_message(embed=self.bot.review_embed(row), view=self.bot.view_for(row))
+        try:
+            await interaction.response.edit_message(view=self.bot.review_card(row))
+        except discord.HTTPException:
+            if not interaction.response.is_done():
+                await interaction.response.send_message("Title saved.", ephemeral=True)
 
 
 class ClippedBot(discord.Client):
@@ -51,6 +55,9 @@ class ClippedBot(discord.Client):
 
     # ================================================================ lifecycle
     async def setup_hook(self):
+        if self.db.kv_get("review_layout") != "card":
+            self.db.execute("UPDATE clips SET review_message_id=NULL WHERE status='review'")
+            self.db.kv_set("review_layout", "card")
         n = self.pipe.retry_failed()
         if n:
             log.info("Retrying %d previously failed clip(s)", n)
@@ -130,21 +137,46 @@ class ClippedBot(discord.Client):
             day += 1
         return out
 
-    def review_embed(self, row) -> discord.Embed:
+    @staticmethod
+    def media_name(row) -> str:
+        return f"{row['broadcaster']}.mp4"
+
+    def review_card(self, row) -> discord.ui.LayoutView:
+        """One Discord card: title, video, details, warnings and buttons together."""
+        ui = discord.ui
         status = row["status"]
         color = {"review": BLURPLE, "approved": GREEN, "posted": GREEN, "rejected": RED}.get(status, GREY)
-        e = discord.Embed(title=row["post_title"] or row["title"], url=row["url"], color=color)
-        e.add_field(name="Streamer", value=self.streamer_name(row["broadcaster"]))
-        e.add_field(name="Views", value=f"{row['view_count']:,}")
-        e.add_field(name="Score", value=f"{row['score']:.2f}")
-        e.add_field(name="Clipped", value=age_text(row["created_at"]))
-        e.add_field(name="Length", value=f"{row['duration'] or 0:.0f}s")
-        e.add_field(name="Game", value=row["game_name"] or "-")
+        name = self.streamer_name(row["broadcaster"])
+        title = (row["post_title"] or row["title"] or "clip").replace("[", "(").replace("]", ")")
+
+        card = ui.Container(accent_colour=color)
+        card.add_item(ui.TextDisplay(f"### [{title}]({row['url']})"))
+        # The video lives on the Discord message itself, so edits keep showing it.
+        card.add_item(ui.MediaGallery(discord.MediaGalleryItem(f"attachment://{self.media_name(row)}")))
+        details = (f"**{name}** · 👁 {row['view_count']:,} views · 🔥 {row['score']:.2f} · "
+                   f"⏱ {age_text(row['created_at'])} · {row['duration'] or 0:.0f}s · {row['game_name'] or '-'}")
+        lines = [details]
         if row["title"] and row["title"] != row["post_title"]:
-            e.add_field(name="Twitch title", value=row["title"][:200], inline=False)
+            lines.append(f"Twitch title: *{row['title'][:200]}*")
         flags = flags_of(row)
         if flags:
-            e.add_field(name="⚠️ Check before approving", value="\n".join(flags), inline=False)
+            lines.append("**⚠️ Check before approving**\n" + "\n".join(flags))
+        card.add_item(ui.TextDisplay("\n".join(lines)))
+
+        cid = row["id"]
+        buttons: list[discord.ui.Button] = []
+        if status == "review":
+            buttons = [
+                ui.Button(label="Approve", emoji="✅", style=discord.ButtonStyle.success, custom_id=f"cd:approve:{cid}"),
+                ui.Button(label="Reject", emoji="❌", style=discord.ButtonStyle.danger, custom_id=f"cd:reject:{cid}"),
+                ui.Button(label="Edit title", emoji="✏️", style=discord.ButtonStyle.secondary, custom_id=f"cd:edit:{cid}"),
+            ]
+        elif status in ("approved", "rejected"):
+            buttons = [ui.Button(label="Undo", emoji="↩️", style=discord.ButtonStyle.secondary, custom_id=f"cd:undo:{cid}")]
+        if buttons:
+            card.add_item(ui.Separator())
+            card.add_item(ui.ActionRow(*buttons))
+
         footer = {
             "review": "Waiting for review",
             "approved": "✅ Approved - in the posting queue",
@@ -153,23 +185,11 @@ class ClippedBot(discord.Client):
             "skipped": "⏭️ Skipped",
             "failed": f"⚠️ Failed: {(row['error'] or '')[:150]}",
         }.get(status, status)
-        e.set_footer(text=f"{footer} · id {row['id']}")
-        return e
+        card.add_item(ui.TextDisplay(f"-# {footer} · id {cid}"))
 
-    def view_for(self, row) -> discord.ui.View:
-        v = discord.ui.View(timeout=None)
-        cid = row["id"]
-        if row["status"] == "review":
-            v.add_item(discord.ui.Button(label="Approve", emoji="✅", style=discord.ButtonStyle.success,
-                                         custom_id=f"cd:approve:{cid}"))
-            v.add_item(discord.ui.Button(label="Reject", emoji="❌", style=discord.ButtonStyle.danger,
-                                         custom_id=f"cd:reject:{cid}"))
-            v.add_item(discord.ui.Button(label="Edit title", emoji="✏️", style=discord.ButtonStyle.secondary,
-                                         custom_id=f"cd:edit:{cid}"))
-        elif row["status"] in ("approved", "rejected"):
-            v.add_item(discord.ui.Button(label="Undo", emoji="↩️", style=discord.ButtonStyle.secondary,
-                                         custom_id=f"cd:undo:{cid}"))
-        return v
+        view = ui.LayoutView(timeout=None)
+        view.add_item(card)
+        return view
 
     async def channel(self, cid: int) -> discord.abc.Messageable:
         return self.get_channel(cid) or await self.fetch_channel(cid)
@@ -183,10 +203,11 @@ class ClippedBot(discord.Client):
         for row in rows:
             preview = Path(row["work_dir"] or "") / "preview.mp4"
             try:
-                kwargs = {"embed": self.review_embed(row), "view": self.view_for(row)}
-                if preview.exists():
-                    kwargs["file"] = discord.File(str(preview), filename=f"{row['broadcaster']}.mp4")
-                msg = await ch.send(**kwargs)
+                if not preview.exists():
+                    log.warning("Preview missing for %s, skipping", row["id"])
+                    continue
+                msg = await ch.send(view=self.review_card(row),
+                                    file=discord.File(str(preview), filename=self.media_name(row)))
                 self.db.update_clip(row["id"], review_message_id=str(msg.id))
             except Exception:
                 log.exception("Could not post review for %s", row["id"])
@@ -217,7 +238,12 @@ class ClippedBot(discord.Client):
         elif action == "undo" and row["status"] in ("approved", "rejected"):
             self.db.update_clip(clip_id, status="review", approved_at=None)
         row = self.db.clip(clip_id)
-        await interaction.response.edit_message(embed=self.review_embed(row), view=self.view_for(row))
+        try:
+            await interaction.response.edit_message(view=self.review_card(row))
+        except discord.HTTPException:
+            # Older-style message that can't be converted - the click still counted.
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"Done: **{row['status']}**.", ephemeral=True)
 
         if action == "approve" and row["status"] == "approved":
             pos = len(self.db.by_status("approved"))
@@ -275,7 +301,7 @@ class ClippedBot(discord.Client):
         try:
             ch = await self.channel(self.review_id)
             msg = await ch.fetch_message(int(row["review_message_id"]))
-            await msg.edit(embed=self.review_embed(row), view=self.view_for(row))
+            await msg.edit(view=self.review_card(row))
         except Exception:
             pass
 
