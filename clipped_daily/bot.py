@@ -319,11 +319,15 @@ class ClippedBot(discord.Client):
         @self.tree.command(name="queue", description="Show approved clips waiting to post", guild=g)
         async def queue(inter: discord.Interaction):
             rows = self.db.by_status("approved", order="approved_at ASC")
+            waiting = len(self.db.by_status("review"))
+            hint = f"\n👀 {waiting} clip(s) waiting for you in <#{self.review_id}>." if waiting else ""
             if not rows:
-                await inter.response.send_message("Queue is empty.", ephemeral=True)
+                await inter.response.send_message(
+                    "📭 Queue is empty - nothing approved yet. Press ✅ Approve on a clip to add it." + hint,
+                    ephemeral=True)
                 return
             slots = self.next_slots(len(rows))
-            lines = []
+            lines = [f"📬 **{len(rows)} approved** - posting at {', '.join(self.s.get('post_times', []))}:{hint}"]
             for i, r in enumerate(rows):
                 when = f"<t:{int(slots[i].timestamp())}:f>" if i < len(slots) else "later"
                 lines.append(f"**{i + 1}.** {r['post_title']} ({self.streamer_name(r['broadcaster'])}) - {when}")
