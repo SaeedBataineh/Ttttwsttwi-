@@ -98,6 +98,10 @@ class ClippedBot(discord.Client):
                 log.exception("Cycle failed")
                 return 0
         await self.post_reviews()
+        waiting = len(self.db.by_status("review"))
+        mins = self.s.get("fetch_interval_minutes", 45)
+        log.info("Check done: %d new clip(s) sent to #review, %d waiting for you. Next check in %s min "
+                 "(or use /fetchnow in Discord). Bot is running - leave this window open.", len(ready), waiting, mins)
         return len(ready)
 
     # ================================================================ helpers

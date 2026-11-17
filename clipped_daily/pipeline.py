@@ -178,8 +178,14 @@ class Pipeline:
             log.info("Skipping renders: %s", why)
             return []
         ready = []
+        picked = self.select(self.s.get("renders_per_cycle", 5))
+        if not picked:
+            log.info("No new clips worth rendering right now (min %s views, %s-%ss long, not already reviewed)",
+                     self.s.get("min_views", 300), self.s.get("min_duration", 8), self.s.get("max_duration", 60))
+        else:
+            log.info("Rendering %d clip(s)…", len(picked))
         try:
-            for c in self.select(self.s.get("renders_per_cycle", 5)):
+            for c in picked:
                 self.process(c)
                 if self.db.clip(c["id"])["status"] == "review":
                     ready.append(c["id"])
