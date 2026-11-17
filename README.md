@@ -98,6 +98,15 @@ python -m clipped_daily run                     # start the bot
 - `render.whisper_model` (`small` is a good balance; `medium` = better accuracy, more VRAM)
 - Facecam layout per streamer in `streamers.yaml` (`facecam: {x, y, w, h}`), otherwise blurred background.
 
+## Long clips and bad titles
+
+- **Trimming:** clips longer than `trim.max_length` (35s) are cut to the best part: the
+  loudest moment (yelling/laughing), the build-up before it and a few seconds after,
+  cut at pauses in speech. The review card shows `✂️ Trimmed 50s → 36s`.
+- **Titles:** junk Twitch titles ("A", "2", "lol", or the stream's own title like
+  "!merch | 24/7 LIVE") are replaced with a quote from what the streamer says. You can
+  always change it with ✏️ Edit title.
+
 ## How clips are picked
 
 `score = (views / streamer's usual clip views) x log10(10 + views per hour)`

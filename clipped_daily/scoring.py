@@ -80,6 +80,55 @@ def flags_for(clip: dict) -> list[str]:
     return flags
 
 
+JUNK_TITLES = {"clip", "lol", "lmao", "lmfao", "w", "l", "bruh", "omg", "wtf", "xd", "pog", "kekw", "hi",
+               "ok", "bro", "yo", "what", "huh", "nah", "yes", "no", "lul", "omegalul", "icant", "a", "test"}
+
+
+def is_bad_title(title: str | None) -> bool:
+    """True for titles nobody would click: 'A', '2', 'lol', or the stream's own title
+    (Twitch uses it as the default clip title, e.g. '!merch | LIVE 24/7 ...')."""
+    t = (title or "").strip()
+    letters = sum(ch.isalpha() for ch in t)
+    if letters < 3 or t.lower().strip("!?.") in JUNK_TITLES:
+        return True
+    if re.search(r"(^|\s)![a-z]+", t, re.I) or " | " in t or re.search(r"\b(live|24/7|day \d+)\b", t, re.I) and len(t) > 40:
+        return True
+    words = t.split()
+    return len(words) == 1 and len(t) <= 4
+
+
+def title_from_transcript(words: list[tuple[float, float, str]], max_chars: int = 70) -> str | None:
+    """Pick a quotable line the streamer actually says (3-12 words), for clips with junk titles."""
+    if not words:
+        return None
+    sentences, cur = [], []
+    for _, _, w in words:
+        cur.append(w)
+        if w.endswith((".", "?", "!")) or len(cur) >= 14:
+            sentences.append(" ".join(cur))
+            cur = []
+    if cur:
+        sentences.append(" ".join(cur))
+    for s in sentences:
+        clean = re.sub(r"\s+", " ", s).strip(" .,-")
+        n = len(clean.split())
+        if 3 <= n <= 12 and sum(ch.isalpha() for ch in clean) >= 8:
+            if len(clean) > max_chars:
+                clean = clean[: max_chars - 1].rsplit(" ", 1)[0] + "…"
+            return f"\u201c{clean}\u201d"
+    return None
+
+
+def best_title(twitch_title: str | None, words: list[tuple[float, float, str]] | None,
+               streamer: str, game: str | None) -> str:
+    if not is_bad_title(twitch_title):
+        return twitch_title.strip()
+    quote = title_from_transcript(words or [])
+    if quote:
+        return quote
+    return f"{streamer} in {game}" if game and game.lower() != "just chatting" else f"{streamer} can't believe this"
+
+
 def make_title(template: str, streamer: str, title: str, game: str | None, limit: int = 90) -> str:
     title = re.sub(r"\s+", " ", (title or "").strip()) or "clip"
     out = template.format(streamer=streamer, title=title, game=game or "")

@@ -4,12 +4,14 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import gaming, scoring
 from .db import DB, now_iso
-from .media import captions, render
+from .media import captions, highlight, render
 from .media.download import download_clip
 from .settings import Settings
 from .twitch import Twitch, parse_time
@@ -147,18 +149,32 @@ class Pipeline:
     def clip_dir(self, clip_id: str) -> Path:
         return self.s.work_dir / clip_id
 
-    def process(self, c: dict) -> None:
+    def _download(self, c: dict) -> tuple[Path, float]:
+        t0 = time.perf_counter()
+        src = download_clip(c["url"], self.clip_dir(c["id"]))
+        return src, time.perf_counter() - t0
+
+    def process(self, c: dict, download: Future | None = None) -> None:
         """Download + caption + render one clip, leaving it in 'review'."""
         st = self.s.streamer(c["broadcaster"])
         d = self.clip_dir(c["id"])
         self.db.update_clip(c["id"], status="rendering", work_dir=str(d), rendered_at=now_iso())
+        start = time.perf_counter()
         try:
-            src = download_clip(c["url"], d)
-            render_files(self.s, src, d, st.facecam if st else None, c["title"])
+            src, dl = download.result() if download else self._download(c)
+            timings: dict = {}
+            name = st.name if st else c["broadcaster"]
+            render_files(self.s, src, d, st.facecam if st else None, c["title"], timings, name, c.get("game_name"))
             title = scoring.make_title(self.s.get("title_template", "{streamer}: {title}"),
-                                       st.name if st else c["broadcaster"], c["title"], c.get("game_name"))
+                                       name, timings.get("title") or c["title"], c.get("game_name"))
             self.db.update_clip(c["id"], status="review", post_title=title, flags=scoring.flags_for(c), error=None)
-            log.info("Rendered %s (%s)", c["id"], c["broadcaster"])
+            s0, e0, full = timings.get("trim", (0, 0, 0))
+            trimmed = f", trimmed {full:.0f}s -> {e0 - s0:.0f}s" if full and e0 - s0 < full - 1 else ""
+            log.info("Rendered %s (%s) in %.1fs  [download %.1fs, captions %.1fs, video %.1fs%s]",
+                     c["id"], c["broadcaster"], time.perf_counter() - start, dl,
+                     timings.get("captions", 0), timings.get("video", 0), trimmed)
+            if trimmed:
+                self.db.update_clip(c["id"], flags=scoring.flags_for(c) + [f"✂️ Trimmed {full:.0f}s → {e0 - s0:.0f}s (best part)"])
         except Exception as e:
             log.exception("Render failed for %s", c["id"])
             self.db.update_clip(c["id"], status="failed", error=str(e)[:1000])
@@ -184,13 +200,16 @@ class Pipeline:
                      self.s.get("min_views", 300), self.s.get("min_duration", 8), self.s.get("max_duration", 60))
         else:
             log.info("Rendering %d clip(s)…", len(picked))
-        try:
-            for c in picked:
-                self.process(c)
-                if self.db.clip(c["id"])["status"] == "review":
-                    ready.append(c["id"])
-        finally:
-            captions.unload()
+        # Download clips in the background while earlier ones are being rendered.
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            downloads = [pool.submit(self._download, c) for c in picked]
+            try:
+                for c, fut in zip(picked, downloads):
+                    self.process(c, fut)
+                    if self.db.clip(c["id"])["status"] == "review":
+                        ready.append(c["id"])
+            finally:
+                captions.unload()
         return ready
 
     def retry_failed(self) -> int:
@@ -210,26 +229,57 @@ class Pipeline:
             self.db.update_clip(r["id"], work_dir=None)
 
 
-def render_files(s: Settings, src: Path, d: Path, facecam: dict | None, twitch_title: str | None) -> Path:
-    """Captions + vertical render + Discord preview for a downloaded clip. Returns final.mp4."""
+def render_files(s: Settings, src: Path, d: Path, facecam: dict | None, twitch_title: str | None,
+                 timings: dict | None = None, streamer: str = "", game: str | None = None) -> Path:
+    """Captions + vertical render + Discord preview for a downloaded clip. Returns final.mp4.
+
+    timings["title"] gets the title to use (the Twitch title, or a quote from the
+    transcript when the Twitch title is junk like 'A' or the stream title).
+    """
+    timings = timings if timings is not None else {}
     rcfg = s.render
+    captions.BEAM_SIZE = int(rcfg.get("whisper_beam_size", 1))
     duration = render.probe_duration(src)
     layout = "facecam" if facecam else "blur"
     fh = int(rcfg.get("facecam_height", 640))
     pos = render.layout_positions(layout, fh)
-    chunks = []
-    if rcfg.get("captions", True):
+    chunks, words = [], []
+    t0 = time.perf_counter()
+    audio = None
+    try:
+        audio = captions.load_audio(src)
+    except Exception:
+        log.exception("Could not read audio")
+    if audio is not None and (rcfg.get("captions", True) or scoring.is_bad_title(twitch_title)):
         try:
-            words = captions.transcribe(src, rcfg.get("whisper_model", "small"), rcfg.get("whisper_device", "auto"))
-            chunks = captions.chunk_words(words)
+            words = captions.transcribe(src, rcfg.get("whisper_model", "small"), rcfg.get("whisper_device", "auto"),
+                                        audio=audio)
         except Exception:
             log.exception("Captions failed - rendering without them")
-    hook = twitch_title if (rcfg.get("hook_title", True) and pos["hook_y"] and twitch_title) else None
+    timings["captions"] = time.perf_counter() - t0
+
+    # Trim long clips to the best part.
+    tcfg = s.get("trim", {}) or {}
+    start, end = 0.0, duration
+    if tcfg.get("enabled", True) and audio is not None:
+        start, end = highlight.find_window(audio, duration, words, float(tcfg.get("max_length", 35)),
+                                           float(tcfg.get("seconds_after_peak", 4)))
+    timings["trim"] = (start, end, duration)
+    words = highlight.shift_words(words, start, end) if (start, end) != (0.0, duration) else words
+    duration = end - start
+    if rcfg.get("captions", True):
+        chunks = captions.chunk_words(words)
+    title = scoring.best_title(twitch_title, words, streamer, game)
+    timings["title"] = title
+    hook = title if (rcfg.get("hook_title", True) and pos["hook_y"]) else None
     ass = captions.build_ass(d / "subs.ass", chunks, caption_y=pos["caption_y"], duration=duration,
                              hook=hook, hook_y=pos["hook_y"] or 0, watermark=rcfg.get("watermark"))
+    t0 = time.perf_counter()
     final = render.render_vertical(src, d / "final.mp4", layout=layout, facecam=facecam, ass_path=ass,
-                                   encoder=rcfg.get("encoder", "auto"), facecam_height=fh)
-    render.render_preview(final, d / "preview.mp4", rcfg.get("encoder", "auto"))
+                                   encoder=rcfg.get("encoder", "auto"), facecam_height=fh,
+                                   preview=d / "preview.mp4", duration=duration,
+                                   start=start, length=duration if (start, end) != (0.0, timings["trim"][2]) else None)
+    timings["video"] = time.perf_counter() - t0
     return final
 
 

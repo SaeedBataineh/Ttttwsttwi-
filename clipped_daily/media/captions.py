@@ -94,14 +94,19 @@ def load_audio(path: Path, sr: int = 16000):
     return np.frombuffer(proc.stdout, dtype=np.float32).copy()
 
 
+BEAM_SIZE = 1  # 1 = greedy decoding: ~2-3x faster than the default 5, nearly as accurate for captions
+
+
 def _run(model, audio) -> list[tuple[float, float, str]]:
-    segments, _ = model.transcribe(audio, language="en", word_timestamps=True, vad_filter=True)
+    segments, _ = model.transcribe(audio, language="en", word_timestamps=True, vad_filter=True,
+                                   beam_size=BEAM_SIZE, condition_on_previous_text=False)
     return [(w.start, w.end, w.word.strip()) for seg in segments for w in (seg.words or [])]
 
 
-def transcribe(path: Path, model_name: str = "small", device: str = "auto") -> list[tuple[float, float, str]]:
+def transcribe(path: Path, model_name: str = "small", device: str = "auto", audio=None) -> list[tuple[float, float, str]]:
     """Return word-level timestamps [(start, end, word)]."""
-    audio = load_audio(path)
+    if audio is None:
+        audio = load_audio(path)
     if audio.size == 0:
         return []
     model, used = _load(model_name, device)

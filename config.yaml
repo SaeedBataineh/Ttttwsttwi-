@@ -42,9 +42,18 @@ render:
   captions: true
   whisper_model: small       # tiny | base | small | medium
   whisper_device: auto       # auto (GPU if available) | cuda | cpu
+  whisper_beam_size: 1       # 1 = fastest; 5 = slightly more accurate, ~2-3x slower
   hook_title: true           # show the title on top of blur-layout videos
   watermark: "Clipped Daily"
   facecam_height: 640        # px of the 1920 tall video used for the facecam
+
+# --- Trimming ---------------------------------------------------------------
+# Long clips are cut down to the best part: the loudest moment (yelling,
+# laughing) plus the build-up before it, cut at pauses in speech.
+trim:
+  enabled: true
+  max_length: 35             # seconds; Shorts do best around 15-35s
+  seconds_after_peak: 4      # keep this much after the climax for the reaction
 
 # --- Gaming mode ------------------------------------------------------------
 # When on, rendering pauses (fetching still runs). Toggle with /gaming in Discord.

@@ -129,9 +129,9 @@ def build_filter(layout: str, facecam: dict | None = None, ass_file: str | None 
 def _video_codec_args(use_nvenc: bool, bitrate: str | None = None) -> list[str]:
     if use_nvenc:
         if bitrate:
-            return ["-c:v", "h264_nvenc", "-preset", "p5", "-b:v", bitrate, "-maxrate", bitrate,
+            return ["-c:v", "h264_nvenc", "-preset", "p4", "-b:v", bitrate, "-maxrate", bitrate,
                     "-bufsize", bitrate]
-        return ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "21", "-b:v", "10M",
+        return ["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "21", "-b:v", "10M",
                 "-maxrate", "14M", "-bufsize", "20M", "-profile:v", "high"]
     if bitrate:
         return ["-c:v", "libx264", "-preset", "veryfast", "-b:v", bitrate, "-maxrate", bitrate,
@@ -147,9 +147,19 @@ def _want_nvenc(encoder: str) -> bool:
     return has_nvenc()
 
 
+def preview_kbps(duration: float) -> int:
+    kbps = int(min(1800, (DISCORD_LIMIT_BYTES * 8 / max(duration, 1.0)) / 1000 - 96))
+    return max(kbps, 250)
+
+
 def render_vertical(src: Path, out: Path, *, layout: str = "blur", facecam: dict | None = None,
-                    ass_path: Path | None = None, encoder: str = "auto", facecam_height: int = 640) -> Path:
-    """Render the final 1080x1920 video. Runs inside the clip's folder so the .ass path needs no escaping."""
+                    ass_path: Path | None = None, encoder: str = "auto", facecam_height: int = 640,
+                    preview: Path | None = None, duration: float | None = None,
+                    start: float = 0.0, length: float | None = None) -> Path:
+    """Render the final 1080x1920 video (and optionally the small Discord preview) in ONE ffmpeg pass.
+
+    Runs inside the clip's folder so the .ass path needs no escaping.
+    """
     workdir = out.parent
     ass_name = None
     if ass_path:
@@ -157,14 +167,24 @@ def render_vertical(src: Path, out: Path, *, layout: str = "blur", facecam: dict
         if ass_path.parent.resolve() != workdir.resolve():
             shutil.copy(ass_path, workdir / ass_name)
     fc = build_filter(layout, facecam, ass_name, facecam_height)
+    if preview:
+        fc += ";[v]split=2[vout][vp0];[vp0]scale=540:960[vprev]"
+        main_label = "[vout]"
+    else:
+        main_label = "[v]"
     use_nvenc = _want_nvenc(encoder)
 
     def attempt(nv: bool) -> None:
-        _run([ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-y", "-i", str(src.resolve()),
-              "-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
-              *_video_codec_args(nv), "-r", "30",
-              "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
-              "-movflags", "+faststart", out.name], cwd=workdir)
+        trim = (["-ss", f"{start:.2f}"] if start > 0 else []) + (["-t", f"{length:.2f}"] if length else [])
+        args = [ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-y", *trim, "-i", str(src.resolve()),
+                "-filter_complex", fc,
+                "-map", main_label, "-map", "0:a?", *_video_codec_args(nv), "-r", "30",
+                "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", out.name]
+        if preview:
+            kb = f"{preview_kbps(length or duration or probe_duration(src))}k"
+            args += ["-map", "[vprev]", "-map", "0:a?", *_video_codec_args(nv, kb), "-r", "30",
+                     "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", str(preview.resolve())]
+        _run(args, cwd=workdir)
 
     try:
         attempt(use_nvenc)
@@ -178,9 +198,7 @@ def render_vertical(src: Path, out: Path, *, layout: str = "blur", facecam: dict
 
 def render_preview(final: Path, out: Path, encoder: str = "auto") -> Path:
     """Small copy for Discord (non-boosted servers allow ~10 MB uploads)."""
-    duration = max(probe_duration(final), 1.0)
-    kbps = int(min(1800, (DISCORD_LIMIT_BYTES * 8 / duration) / 1000 - 96))
-    kbps = max(kbps, 250)
+    kbps = preview_kbps(probe_duration(final))
     use_nvenc = _want_nvenc(encoder)
 
     def attempt(nv: bool) -> None:
