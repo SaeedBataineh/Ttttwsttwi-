@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0" stop-color="#1F1F24"/>
+      <stop offset="1" stop-color="#0B0B0D"/>
+    </radialGradient>
+    <linearGradient id="y" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF04D"/>
+      <stop offset="1" stop-color="#FFC400"/>
+    </linearGradient>
+    <!-- play triangle, rounded -->
+    <path id="play" d="M196 140 Q176 128 176 152 L176 360 Q176 384 196 372 L374 268 Q394 256 374 244 Z"/>
+    <!-- cut line: below/left half and above/right half -->
+    <clipPath id="lower"><polygon points="0,512 0,330 512,214 512,512"/></clipPath>
+    <clipPath id="upper"><polygon points="0,0 512,0 512,196 0,312"/></clipPath>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g fill="url(#y)">
+    <use href="#play" clip-path="url(#lower)" transform="translate(-6 8)"/>
+    <use href="#play" clip-path="url(#upper)" transform="translate(10 -10)"/>
+  </g>
+  <!-- little cut sparks -->
+  <g stroke="#FFE600" stroke-width="7" stroke-linecap="round">
+    <line x1="404" y1="196" x2="430" y2="190"/>
+    <line x1="402" y1="178" x2="420" y2="160"/>
+  </g>
+</svg>
