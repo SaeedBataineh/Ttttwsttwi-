@@ -20,9 +20,11 @@ class Streamer:
     group: str | None = None
     facecam: dict | None = None
     allowed: bool = True
+    tags: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        d = {"login": self.login, "name": self.name, "group": self.group, "facecam": self.facecam}
+        d = {"login": self.login, "name": self.name, "group": self.group, "facecam": self.facecam,
+             "tags": self.tags}
         if not self.allowed:
             d["allowed"] = False
         return d
@@ -101,7 +103,8 @@ class Settings:
                     else:
                         break
             body = yaml.safe_dump(
-                {"streamers": [s.to_dict() for s in self.streamers]},
+                {"group_tags": self.config.get("group_tags") or {},
+                 "streamers": [s.to_dict() for s in self.streamers]},
                 sort_keys=False, allow_unicode=True,
             )
             self.streamers_path.write_text(header + body, encoding="utf-8")
@@ -163,5 +166,7 @@ def load(root: Path = ROOT) -> Settings:
             group=s.get("group"),
             facecam=s.get("facecam"),
             allowed=s.get("allowed", True),
+            tags=[str(x) for x in (s.get("tags") or [])],
         ))
+    config.setdefault("group_tags", raw.get("group_tags") or {})
     return Settings(config=config, streamers=streamers, root=root)

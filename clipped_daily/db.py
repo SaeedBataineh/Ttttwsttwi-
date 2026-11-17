@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS clips (
     status          TEXT NOT NULL DEFAULT 'seen',
     -- seen | rendering | review | approved | posted | rejected | duplicate | failed | skipped
     flags           TEXT DEFAULT '[]',     -- JSON list of warnings
+    tags            TEXT DEFAULT '[]',     -- JSON list of YouTube tags
+    transcript      TEXT,
     post_title      TEXT,
     work_dir        TEXT,
     review_message_id TEXT,
@@ -60,6 +62,11 @@ class DB:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(SCHEMA)
+        # Add columns introduced after a database was first created.
+        have = {r[1] for r in self._conn.execute("PRAGMA table_info(clips)")}
+        for col, ddl in (("rendered_at", "TEXT"), ("tags", "TEXT DEFAULT '[]'"), ("transcript", "TEXT")):
+            if col not in have:
+                self._conn.execute(f"ALTER TABLE clips ADD COLUMN {col} {ddl}")
         self._conn.commit()
 
     def execute(self, sql: str, params=()) -> sqlite3.Cursor:
@@ -113,7 +120,7 @@ class DB:
     def update_clip(self, clip_id: str, **fields) -> None:
         if not fields:
             return
-        for k in ("flags", "results"):
+        for k in ("flags", "results", "tags"):
             if k in fields and not isinstance(fields[k], str):
                 fields[k] = json.dumps(fields[k])
         fields["updated_at"] = now_iso()

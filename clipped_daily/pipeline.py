@@ -9,7 +9,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import gaming, scoring
+from . import gaming, scoring, tagging
 from .db import DB, now_iso
 from .media import captions, highlight, render
 from .media.download import download_clip
@@ -149,6 +149,16 @@ class Pipeline:
     def clip_dir(self, clip_id: str) -> Path:
         return self.s.work_dir / clip_id
 
+    def known_names(self) -> dict[str, str]:
+        """Words that identify one of your streamers -> their display name (for tags)."""
+        out: dict[str, str] = {}
+        for st in self.s.streamers:
+            for key in [st.login, *st.name.lower().split()]:
+                key = key.lower()
+                if len(key) >= 3 and key not in tagging.STOP:
+                    out.setdefault(key, st.name.lower())
+        return out
+
     def _download(self, c: dict) -> tuple[Path, float]:
         t0 = time.perf_counter()
         src = download_clip(c["url"], self.clip_dir(c["id"]))
@@ -167,7 +177,13 @@ class Pipeline:
             render_files(self.s, src, d, st.facecam if st else None, c["title"], timings, name, c.get("game_name"))
             title = scoring.make_title(self.s.get("title_template", "{streamer}: {title}"),
                                        name, timings.get("title") or c["title"], c.get("game_name"))
-            self.db.update_clip(c["id"], status="review", post_title=title, flags=scoring.flags_for(c), error=None)
+            tags = tagging.build_tags(
+                streamer_name=name, login=c["broadcaster"], streamer_tags=st.tags if st else [],
+                group=st.group if st else None, group_tags=self.s.get("group_tags"),
+                game=c.get("game_name"), title=c["title"], transcript=timings.get("transcript"),
+                known_names=self.known_names())
+            self.db.update_clip(c["id"], status="review", post_title=title, flags=scoring.flags_for(c), error=None,
+                                tags=tags, transcript=(timings.get("transcript") or "")[:5000])
             s0, e0, full = timings.get("trim", (0, 0, 0))
             trimmed = f", trimmed {full:.0f}s -> {e0 - s0:.0f}s" if full and e0 - s0 < full - 1 else ""
             log.info("Rendered %s (%s) in %.1fs  [download %.1fs, captions %.1fs, video %.1fs%s]",
@@ -269,6 +285,7 @@ def render_files(s: Settings, src: Path, d: Path, facecam: dict | None, twitch_t
     duration = end - start
     if rcfg.get("captions", True):
         chunks = captions.chunk_words(words)
+    timings["transcript"] = " ".join(w[2] for w in words)
     title = scoring.best_title(twitch_title, words, streamer, game)
     timings["title"] = title
     hook = title if (rcfg.get("hook_title", True) and pos["hook_y"]) else None
@@ -288,6 +305,13 @@ def results_of(row) -> dict:
         return json.loads(row["results"] or "{}")
     except Exception:
         return {}
+
+
+def tags_of(row) -> list[str]:
+    try:
+        return json.loads(row["tags"] or "[]")
+    except Exception:
+        return []
 
 
 def flags_of(row) -> list[str]:

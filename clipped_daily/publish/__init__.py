@@ -1,9 +1,11 @@
 """Posts a rendered clip to every enabled platform."""
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
+from .. import tagging
 from ..settings import Settings
 
 log = logging.getLogger(__name__)
@@ -12,19 +14,28 @@ log = logging.getLogger(__name__)
 def description_for(settings: Settings, clip: dict) -> str:
     st = settings.streamer(clip["broadcaster"])
     name = st.name if st else clip["broadcaster"]
+    headline = clip.get("post_title") or clip.get("title") or ""
     lines = [
-        clip.get("title") or "",
+        headline,
         "",
         f"🎥 Streamer: {name} - https://twitch.tv/{clip['broadcaster']}",
         "Go follow and support the stream!",
     ]
     if clip.get("creator_name"):
         lines.append(f"✂️ Clipped on Twitch by {clip['creator_name']}")
-    lines += ["", f"#shorts #{clip['broadcaster']} #twitch #streamer #{settings.get('channel_name', '').replace(' ', '').lower()}"]
+    lines += ["", tagging.hashtags(tags_for(settings, clip))]
     return "\n".join(lines)
 
 
 def tags_for(settings: Settings, clip: dict) -> list[str]:
+    stored = clip.get("tags")
+    if isinstance(stored, str):
+        try:
+            stored = json.loads(stored)
+        except ValueError:
+            stored = None
+    if stored:
+        return list(stored)
     st = settings.streamer(clip["broadcaster"])
     tags = [clip["broadcaster"], st.name if st else "", "twitch", "stream clips", "shorts"]
     if clip.get("game_name"):

@@ -9,40 +9,55 @@
 #          Find it with:  python -m clipped_daily snapshot <login>
 #          Example:       facecam: {x: 0.0, y: 0.0, w: 0.25, h: 0.3}
 # allowed: set to false to pause a streamer without deleting them
+# tags:    extra YouTube tags for this streamer (nicknames, what they're known for)
+
+# Tags added to every streamer in a group
+group_tags:
+  amp: [amp, any means possible]
+
 streamers:
   - login: kaicenat
     name: Kai Cenat
     group: amp
     facecam: null
+    tags: [kai, kai cenat live, mafiathon]
   - login: xqc
     name: xQc
     group: null
     facecam: null
+    tags: [xqcow, juicer]
   - login: jynxzi
     name: Jynxzi
     group: null
     facecam: null
+    tags: [rainbow six siege, r6]
   - login: plaqueboymax
     name: Plaqueboymax
     group: null
     facecam: null
+    tags: [max, freestyle]
   - login: agent00
     name: Agent00
     group: amp
     facecam: null
+    tags: [agent]
   - login: fanum
     name: Fanum
     group: amp
     facecam: null
+    tags: [fanum tax]
   - login: lacy
     name: Lacy
     group: lacy_crew
     facecam: null
+    tags: [lacy fortnite]
   - login: stableronaldo
     name: StableRonaldo
     group: lacy_crew
     facecam: null
+    tags: [stable ronaldo, stable]
   - login: adapt
     name: Adapt
     group: lacy_crew
     facecam: null
+    tags: []

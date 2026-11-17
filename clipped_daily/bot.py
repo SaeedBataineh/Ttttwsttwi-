@@ -12,7 +12,7 @@ from discord.ext import tasks
 
 from . import gaming
 from .db import DB, now_iso
-from .pipeline import Pipeline, age_text, flags_of, results_of
+from .pipeline import Pipeline, age_text, flags_of, results_of, tags_of
 from .publish import publish
 from .settings import Settings, Streamer
 
@@ -21,16 +21,20 @@ log = logging.getLogger(__name__)
 GREEN, RED, BLURPLE, GREY = 0x2ECC71, 0xE74C3C, 0x5865F2, 0x95A5A6
 
 
-class EditTitleModal(discord.ui.Modal, title="Edit post title"):
-    def __init__(self, bot: "ClippedBot", clip_id: str, current: str):
+class EditTitleModal(discord.ui.Modal, title="Edit title & tags"):
+    def __init__(self, bot: "ClippedBot", clip_id: str, current: str, tags: list[str]):
         super().__init__(timeout=600)
         self.bot = bot
         self.clip_id = clip_id
         self.new_title = discord.ui.TextInput(label="Title", default=current[:100], max_length=95)
+        self.new_tags = discord.ui.TextInput(label="Tags (comma separated)", default=", ".join(tags)[:450],
+                                             style=discord.TextStyle.paragraph, max_length=480, required=False)
         self.add_item(self.new_title)
+        self.add_item(self.new_tags)
 
     async def on_submit(self, interaction: discord.Interaction):
-        self.bot.db.update_clip(self.clip_id, post_title=str(self.new_title.value).strip())
+        tags = [x.strip().lower() for x in str(self.new_tags.value or "").split(",") if x.strip()]
+        self.bot.db.update_clip(self.clip_id, post_title=str(self.new_title.value).strip(), tags=tags)
         row = self.bot.db.clip(self.clip_id)
         try:
             await interaction.response.edit_message(view=self.bot.review_card(row))
@@ -187,6 +191,9 @@ class ClippedBot(discord.Client):
         lines = [details]
         if row["title"] and row["title"] != row["post_title"]:
             lines.append(f"Twitch title: *{row['title'][:200]}*")
+        tags = tags_of(row)
+        if tags:
+            lines.append(f"🏷️ {', '.join(tags[:10])}")
         flags = flags_of(row)
         if flags:
             lines.append("**⚠️ Check before approving**\n" + "\n".join(flags))
@@ -198,7 +205,7 @@ class ClippedBot(discord.Client):
             buttons = [
                 ui.Button(label="Approve", emoji="✅", style=discord.ButtonStyle.success, custom_id=f"cd:approve:{cid}"),
                 ui.Button(label="Reject", emoji="❌", style=discord.ButtonStyle.danger, custom_id=f"cd:reject:{cid}"),
-                ui.Button(label="Edit title", emoji="✏️", style=discord.ButtonStyle.secondary, custom_id=f"cd:edit:{cid}"),
+                ui.Button(label="Edit title & tags", emoji="✏️", style=discord.ButtonStyle.secondary, custom_id=f"cd:edit:{cid}"),
             ]
         elif status in ("approved", "rejected"):
             buttons = [ui.Button(label="Undo", emoji="↩️", style=discord.ButtonStyle.secondary, custom_id=f"cd:undo:{cid}")]
@@ -258,7 +265,8 @@ class ClippedBot(discord.Client):
             return
 
         if action == "edit":
-            await interaction.response.send_modal(EditTitleModal(self, clip_id, row["post_title"] or row["title"]))
+            await interaction.response.send_modal(
+                EditTitleModal(self, clip_id, row["post_title"] or row["title"], tags_of(row)))
             return
         if action == "approve" and row["status"] == "review":
             self.db.update_clip(clip_id, status="approved", approved_at=now_iso())
